@@ -18,6 +18,7 @@ use URI;
 use POSIX;
 use IO::All;
 use String::Truncate qw(elide);
+use Cwd;
 use utf8;
 
 # could be flexible, who cares.... ;)
@@ -30,24 +31,28 @@ has consumer_key => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'Consumer Key of your Twitter application',
 );
 
 has consumer_secret => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'Consumer Secret of your Twitter application',
 );
 
 has access_token => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'Access Token of the Twitter user for the application',
 );
 
 has access_token_secret => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'Access Token Secret of the Twitter user for the application',
 );
 
 has rss_file => (
@@ -55,6 +60,7 @@ has rss_file => (
 	is => 'ro',
 	required => 1,
 	default => sub { 'rss.txt' },
+	documentation => 'File with the list of RSS feeds (one per line, default: rss.txt)',
 );
 
 has keyword_file => (
@@ -62,25 +68,29 @@ has keyword_file => (
 	is => 'ro',
 	required => 1,
 	default => sub { 'keyword.txt' },
+	documentation => 'File with Keyword (one per line, default: keyword.txt)',
 );
 
 has bitly_username => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'bit.ly API Username',
 );
 
 has bitly_apikey => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
+	documentation => 'bit.ly API Key',
 );
 
 has rss_delay => (
 	isa => 'Int',
 	is => 'ro',
 	required => 1,
-	default => sub { 100 },
+	default => sub { 600 },
+	documentation => 'How often the rss should get checked in seconds (default: 600)',
 );
 
 has rss_headline_max => (
@@ -88,6 +98,7 @@ has rss_headline_max => (
 	is => 'ro',
 	required => 1,
 	default => sub { 3 },
+	documentation => 'How many headlines should be used maximum per fetch (default: 3)',
 );
 
 has rss_ignore_first => (
@@ -95,13 +106,15 @@ has rss_ignore_first => (
 	is => 'ro',
 	required => 1,
 	default => sub { 1 },
+	documentation => 'Ignore first fetch per feed (default: on)',
 );
 
 has tmpdir => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
-	default => sub { '/tmp' },
+	default => sub { getcwd },
+	documentation => 'Temp directory for the application (default: working directory)',
 );
 
 #--------------------------------------------------------
@@ -142,6 +155,7 @@ has keywords => (
 );
 
 has max_feeds_count => (
+	traits => [ 'NoGetopt' ],
 	isa => 'Int',
 	is => 'rw',
 );
@@ -184,17 +198,27 @@ has twitter => (
 has session => (
 	is => 'rw',
 	isa => 'POE::Session',
+	traits => [ 'NoGetopt' ],
 );
 
 has first_run => (
 	is => 'ro',
 	isa => 'HashRef',
 	default => sub {{}},
+	traits => [ 'NoGetopt' ],
+);
+
+has '+use_logger_singleton' => (
+	traits => [ 'NoGetopt' ],
+);
+
+has '+logger' => (
+	traits => [ 'NoGetopt' ],
 );
 
 sub START {
 	my ( $self, $session ) = @_[ OBJECT, SESSION ];
-	$self->logger->info('Starting up... '.__PACKAGE__.' '.$VERSION);
+	$self->logger->info('Starting up... '.__PACKAGE__);
 	$self->logger->debug('Assigning POE::Session');
 	$self->session($session);
 	$self->twitter;
@@ -301,15 +325,28 @@ __END__
 
 =head1 SYNOPSIS
 
-  script/twitch --consumer_key 1a2b3c4d --consumer_secret 1a2b3c4d --access_token 1a2b3c4d --access_token_secret 1a2b3c4d \
-    --rss_file rsss.txt --keywords_file keywords.txt --bitly_user username --bitly_apikey 1a2b3c4d
+  use App::Twitch;
+  
+  my $twitch = App::Twitch->new({
+    consumer_key => '1a2b3c4d',
+    consumer_secret => '1a2b3c4d',
+    access_token => '1a2b3c4d',
+    access_token_secret => '1a2b3c4d',
+    bitly_user => 'username',
+    bitly_apikey => '1a2b3c4d',
+    rss_file => 'rss.txt',
+    keywords_file => 'keywords.txt',
+  });
+
+  POE::Kernel->run;
 
 =head1 DESCRIPTION
 
-Take it or leave it, so far just released for having it on CPAN. If you want provide docs, i would be happy. Also, 
+Take it or leave it, so far just released for having it on CPAN. If you want provide docs, I would be happy. Also, 
 its just a tool, its not based on an intelligent or effective design and just is made for a specific requirement case.
 
 =head1 SEE ALSO
 
 =for :list
 * L<Net::Twitter>
+* L<MooseX::POE>

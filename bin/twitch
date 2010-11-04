@@ -1,0 +1,23 @@
+#!/usr/bin/env perl
+# PODNAME: twitch
+# ABSTRACT: command line tool to use twitch
+
+use App::Twitch;
+
+my $twitch = App::Twitch->new_with_options();
+POE::Kernel->run;
+
+__END__
+
+=head1 SYNOPSIS
+
+  twitch
+    --consumer_key 1a2b3c4d --consumer_secret 1a2b3c4d \
+    --access_token 1a2b3c4d --access_token_secret 1a2b3c4d \
+    --bitly_user username --bitly_apikey 1a2b3c4d \
+    --rss_file rss.txt --keywords_file keyword.txt 
+
+=head1 SEE ALSO
+
+=for :list
+* L<App::Twitch>

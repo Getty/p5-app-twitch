@@ -1,6 +1,0 @@
-#!/usr/bin/env perl
-
-use App::Twitch;
-
-my $twitch = App::Twitch->new_with_options();
-POE::Kernel->run;
