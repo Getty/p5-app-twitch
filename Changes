@@ -1,6 +1,7 @@
 Revision history for {{$dist->name}}
 
 {{$NEXT}}
+	- Release for new Dist::Zilla::PluginBundle::GETTY
 
 0.003     2010-11-04 19:36:08 Europe/Berlin
 
