@@ -18,7 +18,6 @@ use URI;
 use POSIX;
 use IO::All;
 use String::Truncate qw(elide);
-use Cwd;
 use utf8;
 
 # could be flexible, who cares.... ;)
