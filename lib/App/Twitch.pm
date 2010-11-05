@@ -293,7 +293,6 @@ sub twitter_update {
 	return 1;
 }
 
-
 sub shorten_text {
 	my ( $self, $text ) = @_;
 	# twitter 140, bit.ly 20, 1 space, 1 buffer

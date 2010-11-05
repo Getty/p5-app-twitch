@@ -9,15 +9,65 @@ POE::Kernel->run;
 
 __END__
 
-=head1 SYNOPSIS
+=head1 INSTALL
 
-  twitch
-    --consumer_key 1a2b3c4d --consumer_secret 1a2b3c4d \
-    --access_token 1a2b3c4d --access_token_secret 1a2b3c4d \
-    --bitly_user username --bitly_apikey 1a2b3c4d \
-    --rss_file rss.txt --keywords_file keyword.txt 
+For installing twitch you need L<Perl|http://www.perl.org/> on your system installed, you can download it on L<http://www.perl.org/>
+or for Windows Systems you can use L<http://strawberryperl.com/>. With L<Perl|http://www.perl.org/> you are able to execute the 
+C<cpan> command, the so called CPAN client. On Windows Systems you can startup the CPAN client with a link installed on the Strawberry
+Perl Start menu folder. You can then inside the cpan client do this:
+
+  cpan[1]> install App::Twitch
+
+All questions inside the installation may be answered with the defaults, just hit enter if it stops :).
+  
+The installation may take a while, cause Perl checks if all the installed and required modules for this program are working on
+your system, with so called tests. This procedure is required to assure you that the application itself runs flawless and without
+problems. You may contact Perl people for help on B<irc.perl.org> on B<#win32> or B<#perl-help>. You are always welcome :).
+
+=head2 IF YOU ARE NOT ROOT
+
+If you are not root of the system, you are using for this bot, you should consider using L<local::lib>, which gives you the
+possibility to install this package in your userspace. The documentation of L<local::lib> exists in several languages.
+
+=head1 USAGE ON WIN32
+
+After install you could write a B<.BAT> file with your favorite text editor like the following one, which you can execute
+and run on your machine all day:
+
+  twitch \
+	--consumer_key XXXXXXXXXXXXXXXXXXXXXX \
+	--consumer_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--access_token 111111111-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--access_token_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--bitly_username XXXXXXXXXXXX \
+	--bitly_apikey XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--rss_delay 1200
+
+=head1 USAGE ON UNIX
+
+After install you can use C<twitch> like any other application on your system, all possible parameter are documented:
+
+  me@workstation:~$ twitch --help
+
+You could prepare a small shell script like this:
+
+  #!/bin/sh
+
+  twitch \
+	--consumer_key XXXXXXXXXXXXXXXXXXXXXX \
+	--consumer_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--access_token 111111111-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--access_token_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--bitly_username XXXXXXXXXXXX \
+	--bitly_apikey XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+	--rss_delay 1200
+
+And then use it inside of a C<screen> session on your host to let it run forever.
 
 =head1 SEE ALSO
 
 =for :list
+* L<Perl|http://www.perl.org/>
+* L<Strawberry Perl for Win32|http://strawberryperl.com/>
 * L<App::Twitch>
+
