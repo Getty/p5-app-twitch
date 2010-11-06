@@ -9,10 +9,9 @@ with qw(
 );
 
 use POE qw(
-	Component::RSSAggregator
+	Component::FeedAggregator
 );
 
-use Data::Dumper;
 use Text::Trim;
 use URI;
 use POSIX;
@@ -92,22 +91,6 @@ has rss_delay => (
 	documentation => 'How often the rss should get checked in seconds (default: 600)',
 );
 
-has rss_headline_max => (
-	isa => 'Int',
-	is => 'ro',
-	required => 1,
-	default => sub { 3 },
-	documentation => 'How many headlines should be used maximum per fetch (default: 3)',
-);
-
-has rss_ignore_first => (
-	isa => 'Bool',
-	is => 'ro',
-	required => 1,
-	default => sub { 1 },
-	documentation => 'Ignore first fetch per feed (default: on)',
-);
-
 has tmpdir => (
 	isa => 'Str',
 	is => 'ro',
@@ -159,18 +142,15 @@ has max_feeds_count => (
 	is => 'rw',
 );
 
-has rss => (
+has feedaggregator => (
 	traits  => [ 'NoGetopt' ],
-	isa => 'POE::Component::RSSAggregator',
+	isa => 'POE::Component::FeedAggregator',
 	is => 'ro',
 	lazy => 1,
 	default => sub {
 		my $self = shift;
-		$self->logger->debug('Starting POE::Component::RSSAggregator');
-		POE::Component::RSSAggregator->new(
-			alias    => 'rss',
-			debug    => 5,
-			callback => $self->session->postback('new_headline'),
+		$self->logger->debug('Starting POE::Component::FeedAggregator');
+		POE::Component::FeedAggregator->new(
 			tmpdir   => $self->tmpdir,
 		);
 	},
@@ -200,13 +180,6 @@ has session => (
 	traits => [ 'NoGetopt' ],
 );
 
-has first_run => (
-	is => 'ro',
-	isa => 'HashRef',
-	default => sub {{}},
-	traits => [ 'NoGetopt' ],
-);
-
 has '+use_logger_singleton' => (
 	traits => [ 'NoGetopt' ],
 );
@@ -221,7 +194,7 @@ sub START {
 	$self->logger->debug('Assigning POE::Session');
 	$self->session($session);
 	$self->twitter;
-	$self->rss;
+	$self->feedaggregator;
 	$self->logger->debug('Setting max_feeds_count to '.$self->feeds_count);
 	$self->max_feeds_count($self->feeds_count);
 	$self->yield('add_feed');
@@ -240,35 +213,21 @@ event add_feed => sub {
 			name			=> $line_number.'_'.$host,
 			delay			=> $self->rss_delay,
 			max_headlines	=> 100,
-			headline_as_id  => 1,
 		};
-		$kernel->post('rss','add_feed',$feed);
+		$self->feedaggregator->add_feed($feed);
 	};
-	if ($@) {
-		$self->logger->error('ERROR ['.$feed_url.']: '.$@);
-	}
+	$self->logger->error('ERROR ['.$feed_url.']: '.$@) if $@;
 	my $delay = floor( $self->rss_delay / $self->max_feeds_count );
 	$kernel->delay('add_feed',$delay) if $self->feeds_count;
 };
 
-event new_headline => sub {
-	my ( $self, $arg ) = @_[ OBJECT, ARG1 ];
-	my $feed = $arg->[0];
-	my $count;
-	if ( $self->first_run->{$feed->url} || !$self->rss_ignore_first) {
-		for my $headline ( $feed->late_breaking_news ) {
-			my $headline_text = $headline->headline;
-			$self->logger->debug('New headline: '.$headline_text);
-			my $text = $self->shorten_text($self->hashtag_keywords($headline_text));
-			my $url = $self->shorten_url($headline->url);
-			$self->twitter_update($text." ".$url) if $url;
-			$count++;
-			return if ($count >= $self->rss_headline_max);
-		}
-	} else {
-		$self->logger->debug('First fetch of '.$feed->url.' ignored');
-		$self->first_run->{$feed->url} = 1;
-	}
+event new_feed_entry => sub {
+	my ( $self, $feed, $entry ) = @_[ OBJECT, ARG0..$#_ ];
+	my $headline_text = $entry->title;
+	$self->logger->debug('New headline: '.$headline_text);
+	my $text = $self->shorten_text($self->hashtag_keywords($headline_text));
+	my $url = $self->shorten_url($entry->link);
+	$self->twitter_update($text." ".$url) if $url;
 };
 
 sub hashtag_keywords {
