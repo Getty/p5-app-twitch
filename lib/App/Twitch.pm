@@ -233,7 +233,7 @@ event new_feed_entry => sub {
 sub hashtag_keywords {
 	my ( $self, $text ) = @_;
 	for (@{$self->keywords}) {
-		$text =~ s/($_)/\#$1/i;
+		$text =~ s/(^|\W)($_)/$1\#$2/ig;
 	}
 	return $text;
 }
