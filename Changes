@@ -2,6 +2,8 @@ Revision history for {{$dist->name}}
 
 {{$NEXT}}
 
+0.005     2010-11-06 20:52:25 Europe/Berlin
+
 0.004     2010-11-05 21:58:18 Europe/Berlin
 	- Release for new Dist::Zilla::PluginBundle::GETTY
 
