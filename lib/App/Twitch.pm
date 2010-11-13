@@ -99,6 +99,14 @@ has tmpdir => (
 	documentation => 'Temp directory for the application (default: working directory)',
 );
 
+has ignore_first => (
+	isa => 'Str',
+	is => 'ro',
+	required => 1,
+	default => sub { 1 },
+	documentation => 'When no cache file exist, ignore the first incoming feed news (default: 1)',
+);
+
 #--------------------------------------------------------
 
 has feeds => (
@@ -165,7 +173,7 @@ has twitter => (
 		my $self = shift;
 		$self->logger->debug('Starting Net::Twitter');
 		Net::Twitter->new(
-			traits   => [qw/API::REST API::Search OAuth/],
+			traits   => [qw/ API::REST API::Search OAuth /],
 			consumer_key		=> $self->consumer_key,
 			consumer_secret		=> $self->consumer_secret,
 			access_token		=> $self->access_token,
@@ -207,12 +215,11 @@ event add_feed => sub {
 		my $uri = URI->new($feed_url);
 		my $host = $uri->host;
 		$host =~ s/\./_/g;
-		my $line_number = $self->max_feeds_count - $self->feeds_count;
 		my $feed = {
 			url				=> $feed_url,
-			name			=> $line_number.'_'.$host,
 			delay			=> $self->rss_delay,
 			max_headlines	=> 100,
+			ignore_first	=> $self->ignore_first,
 		};
 		$self->feedaggregator->add_feed($feed);
 	};
@@ -233,7 +240,7 @@ event new_feed_entry => sub {
 sub hashtag_keywords {
 	my ( $self, $text ) = @_;
 	for (@{$self->keywords}) {
-		$text =~ s/(^|\W)($_)/$1\#$2/ig;
+		$text =~ s/(^|[^\w#])($_)/$1#$2/ig;
 	}
 	return $text;
 }
@@ -306,4 +313,5 @@ its just a tool, its not based on an intelligent or effective design and just is
 
 =for :list
 * L<Net::Twitter>
+* L<POE::Component::FeedAggregator>
 * L<MooseX::POE>

@@ -1,6 +1,7 @@
 Revision history for {{$dist->name}}
 
 {{$NEXT}}
+	- Implemented ignore_first, removed name setting on the feed
 
 0.005     2010-11-06 20:52:25 Europe/Berlin
 
