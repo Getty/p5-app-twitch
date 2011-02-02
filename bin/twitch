@@ -3,9 +3,7 @@
 # ABSTRACT: command line tool to use twitch
 
 use App::Twitch;
-
-my $twitch = App::Twitch->new_with_options();
-POE::Kernel->run;
+App::Twitch->run;
 
 __END__
 
@@ -28,41 +26,6 @@ problems. You may contact Perl people for help on B<irc.perl.org> on B<#win32> o
 
 If you are not root of the system, you are using for this bot, you should consider using L<local::lib>, which gives you the
 possibility to install this package in your userspace. The documentation of L<local::lib> exists in several languages.
-
-=head1 USAGE ON WIN32
-
-After install you could write a B<.BAT> file with your favorite text editor like the following one, which you can execute
-and run on your machine all day:
-
-  twitch \
-	--consumer_key XXXXXXXXXXXXXXXXXXXXXX \
-	--consumer_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--access_token 111111111-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--access_token_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--bitly_username XXXXXXXXXXXX \
-	--bitly_apikey XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--rss_delay 1200
-
-=head1 USAGE ON UNIX
-
-After install you can use C<twitch> like any other application on your system, all possible parameter are documented:
-
-  me@workstation:~$ twitch --help
-
-You could prepare a small shell script like this:
-
-  #!/bin/sh
-
-  twitch \
-	--consumer_key XXXXXXXXXXXXXXXXXXXXXX \
-	--consumer_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--access_token 111111111-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--access_token_secret XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--bitly_username XXXXXXXXXXXX \
-	--bitly_apikey XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-	--rss_delay 1200
-
-And then use it inside of a C<screen> session on your host to let it run forever.
 
 =head1 SEE ALSO
 
