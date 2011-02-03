@@ -208,12 +208,8 @@ has triggercontainer => (
 	traits  => [ 'Array' ],
 	is      => 'ro',
 	isa     => 'ArrayRef',
-	default => sub {
-		my $self = shift;
-		return [ $self->keyword_file ] if $self->keyword_file;
-		return [];
-	},
-	documentation => 'Give list of triggering keyword files (comma seperated)',
+	default => sub {[]},
+	documentation => 'Give list of triggering keyword files (comma seperated list of filenames)',
 );
 
 has container => (
@@ -221,7 +217,15 @@ has container => (
 	is      => 'ro',
 	isa     => 'ArrayRef',
 	default => sub {[]},
-	documentation => 'Give list of keyword files (comma seperated)',
+	documentation => 'Give list of keyword files (comma seperated list of filenames)',
+);
+
+has blockercontainer => (
+	traits  => [ 'Array' ],
+	is      => 'ro',
+	isa     => 'ArrayRef',
+	default => sub {[]},
+	documentation => 'Give list of keyword files, which block tweeting that entry (comma seperated list of filenames)',
 );
 
 has bitly_username => (
@@ -275,6 +279,18 @@ has logfile => (
 	documentation => 'Name of the logfile in the configuration directory (default: twitch.log)',
 );
 
+has '+basedir' => (
+	documentation => 'Basepath for configfile or pidfile (default: current directory)',
+);
+
+has '+pidfile' => (
+	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
+);
+
+has '+progname' => (
+	documentation => 'Name for the application, like configfile name base and so on (default: twitch)',
+);
+
 has '+foreground' => (
 	documentation => 'Run on the console and don\'t detach into background (default: off)',
 );
@@ -318,6 +334,23 @@ has _containers => (
 		my ( $self ) = @_;
 		$self->logger->debug('Generating all Keywords::Container');
 		my @containers;
+		for (@{$self->blockercontainer}) {
+			$self->logger->debug('Preparing Keywords::Container for blockercontainer');
+			my @lists;
+			for (split(',',$_)) {
+				$self->logger->debug('Preparing Keywords::List '.$_);
+				my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
+				push @lists, Text::Keywords::List->new(
+					keywords => \@lines,
+				);
+			}
+			push @containers, Text::Keywords::Container->new(
+				lists => \@lists,
+				params => {
+					blocker => 1,
+				},
+			);
+		}
 		for (@{$self->triggercontainer}) {
 			$self->logger->debug('Preparing Keywords::Container for triggercontainer');
 			my @lists;
@@ -512,16 +545,17 @@ event new_feed_entry => sub {
 		entry => $entry,
 	};
 	$self->logger->debug('New feed entry: '.$entry->link);
+	my $url = $entry->link;
+	$url =~ s/ //g;
 	POE::Kernel->post(
 		$self->_http_alias,
 		'request',
 		'new_content',
-		HTTP::Request->new(GET => $entry->link),
+		HTTP::Request->new(GET => $url),
 		$event,
 	);
 };
 
-use Data::Dumper;
 use Encode;
 require Encode::Detect;
 
@@ -539,7 +573,7 @@ event new_content => sub {
 		}		
 		if (utf8::is_utf8($content)) {
 			$self->logger->debug('New content fetched from: '.$event->{entry}->link);
-			$extractor->extract($response->decoded_content);
+			$extractor->extract($content);
 			my @keywords = $self->_keywords->from($title, $extractor->as_text);
 			if ($self->debug) {
 				my @keywords_text;
@@ -548,11 +582,15 @@ event new_content => sub {
 				}
 				$self->logger->debug('Keywords found: |'.join("|",@keywords_text).'|');
 			}
-			if ($keywords[0] && $keywords[0]->container->params->{trigger}) {
+			if ( $keywords[0] && $keywords[0]->container->params->{blocker} ) {
+				$self->logger->debug('Blocker found, ignoring entry');
+			} elsif ( $self->tweet_everything || ( $keywords[0] && $keywords[0]->container->params->{trigger} ) ) {
 				$event->{keywords} = \@keywords;
 				$self->logger->debug('Trigger keyword found in: '.$title);
+				my $url = $event->{entry}->link;
+				$url =~ s/ //g;
 				$self->_shorten->shorten({
-					url => $event->{entry}->link,
+					url => $url,
 					event => 'new_shortened',
 					_twitch_event => $event,
 				});
@@ -571,6 +609,7 @@ event new_shortened => sub {
 	my $title = $event->{entry}->title;
 	my $content = $event->{content};
 	my $url = $event->{entry}->link;
+	$url =~ s/ //g;
 	my @keywords = @{$event->{keywords}};
 	if ($returned->{short}) {
 		$self->logger->debug('Received ShortURL for: '.$url);
@@ -608,8 +647,7 @@ __END__
 
 =head1 DESCRIPTION
 
-Take it or leave it, so far just released for having it on CPAN. If you want provide docs, I would be happy. Also, 
-its just a tool, its not based on an intelligent or effective design and just is made for a specific requirement case.
+More documentation coming soon....
 
 =head1 SEE ALSO
 
