@@ -1,6 +1,8 @@
 Revision history for {{$dist->name}}
 
 {{$NEXT}}
+
+0.900     2011-02-03 06:03:42 Europe/Berlin
 	- Huge refactoring and redesign of twitch (pre-v1, still in test)
 
 0.006     2010-11-14 00:06:09 Europe/Berlin
