@@ -1,6 +1,7 @@
 package App::Twitch;
 # ABSTRACT: Your personal Twitter b...... lalalala
 
+sub POE::Kernel::USE_SIGCHLD () { 1 }
 use MooseX::POE;
 
 with qw(
@@ -32,7 +33,7 @@ use HTML::ExtractContent;
 use Carp qw( croak );
 
 # could be flexible, who cares.... ;)
-use WWW::Shorten::Bitly;
+#use WWW::Shorten::Bitly;
 
 # could be ... ah forget it :-P
 use Net::Twitter;
@@ -45,20 +46,55 @@ after start => sub {
 	POE::Kernel->run;
 };
 
+has '+basedir' => (
+	documentation => 'Basepath for configfile or pidfile (default: current directory)',
+);
+
 has '+pidbase' => (
 	default => sub { getcwd },
+	default => sub {
+		my $self = shift;
+		$self->tmpdir;
+	},
+	documentation => 'Directory for the pid file (default: working directory)',
+);
+
+has '+pidfile' => (
+	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
 );
 
 has '+use_logger_singleton' => (
 	traits => [ 'NoGetopt' ],
 );
 
+has '+pidfile' => (
+	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
+);
+
+has '+pidfile' => (
+	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
+);
+
+has '+pidfile' => (
+	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
+);
+
 has '+progname' => (
 	default => sub { 'twitch' },
+	documentation => 'Name for the application, like configfile name base and so on (default: twitch)',
 );
 
 has '+logger' => (
 	traits => [ 'NoGetopt' ],
+);
+
+has '+foreground' => (
+	documentation => 'Run on the console and don\'t detach into background (default: off)',
+);
+
+has '+configfile' => (
+	default => sub { 'twitch.yml' },
+	documentation => 'Configuration file used for all those settings (default: twitch.yml)',
 );
 
 has log_dispatch_conf => (
@@ -279,35 +315,6 @@ has logfile => (
 	documentation => 'Name of the logfile in the configuration directory (default: twitch.log)',
 );
 
-has '+basedir' => (
-	documentation => 'Basepath for configfile or pidfile (default: current directory)',
-);
-
-has '+pidfile' => (
-	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
-);
-
-has '+progname' => (
-	documentation => 'Name for the application, like configfile name base and so on (default: twitch)',
-);
-
-has '+foreground' => (
-	documentation => 'Run on the console and don\'t detach into background (default: off)',
-);
-
-has '+configfile' => (
-	default => sub { 'twitch.yml' },
-	documentation => 'Configuration file used for all those settings (default: twitch.yml)',
-);
-
-has '+pidbase' => (
-	default => sub {
-		my $self = shift;
-		$self->tmpdir;
-	},
-	documentation => 'Directory for the pid file (default: working directory)',
-);
-
 has ignore_first => (
 	isa => 'Str',
 	is => 'ro',
@@ -323,7 +330,34 @@ has http_agent => (
 	documentation => 'HTTP-agent to be used for the HTTP request to fetch the content (default: App::Twitch/VERSION)',
 );
 
+# No idea why this doesn't work....
+has [ '+no_double_fork', '+ignore_zombies', '+dont_close_all_files', '+stop_timeout' ] => (
+	documentation => 'Please see MooseX::Daemonize documentation',
+);
+
 #--------------------------------------------------------
+
+sub _generate_containers {
+	my ( $self, $array, $params ) = @_;
+	my @containers;
+	$params = {} if !$params;
+	for (@{$array}) {
+		$self->logger->debug('Preparing Keywords::Container for blockercontainer');
+		my @lists;
+		for (split(',',$_)) {
+			$self->logger->debug('Preparing Keywords::List '.$_);
+			my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
+			push @lists, Text::Keywords::List->new(
+				keywords => \@lines,
+			);
+		}
+		push @containers, Text::Keywords::Container->new(
+			lists => \@lists,
+			params => $params,
+		);
+	}
+	return @containers;
+}
 
 has _containers => (
 	traits  => [ 'NoGetopt', 'Array' ],
@@ -334,54 +368,9 @@ has _containers => (
 		my ( $self ) = @_;
 		$self->logger->debug('Generating all Keywords::Container');
 		my @containers;
-		for (@{$self->blockercontainer}) {
-			$self->logger->debug('Preparing Keywords::Container for blockercontainer');
-			my @lists;
-			for (split(',',$_)) {
-				$self->logger->debug('Preparing Keywords::List '.$_);
-				my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
-				push @lists, Text::Keywords::List->new(
-					keywords => \@lines,
-				);
-			}
-			push @containers, Text::Keywords::Container->new(
-				lists => \@lists,
-				params => {
-					blocker => 1,
-				},
-			);
-		}
-		for (@{$self->triggercontainer}) {
-			$self->logger->debug('Preparing Keywords::Container for triggercontainer');
-			my @lists;
-			for (split(',',$_)) {
-				$self->logger->debug('Preparing Keywords::List '.$_);
-				my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
-				push @lists, Text::Keywords::List->new(
-					keywords => \@lines,
-				);
-			}
-			push @containers, Text::Keywords::Container->new(
-				lists => \@lists,
-				params => {
-					trigger => 1,
-				},
-			);
-		}
-		for (@{$self->container}) {
-			$self->logger->debug('Preparing Keywords::Container for container');
-			my @lists;
-			for (split(',',$_)) {
-				$self->logger->debug('Preparing Keywords::List '.$_);
-				my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
-				push @lists, Text::Keywords::List->new(
-					keywords => \@lines,
-				);
-			}
-			push @containers, Text::Keywords::Container->new(
-				lists => \@lists,
-			);
-		}
+		push @containers, $self->_generate_containers($self->blockercontainer, { blocker => 1 });
+		push @containers, $self->_generate_containers($self->triggercontainer, { trigger => 1 });
+		push @containers, $self->_generate_containers($self->container);
 		return \@containers;
 	},
 );
@@ -504,11 +493,11 @@ sub START {
 	$self->logger->debug('Assigning POE::Session');
 	$self->_session($session);
 	$self->_containers;
-	$self->_twitter;
+	$self->_twitter if !$self->dryrun;
 	$self->_tweet;
 	$self->_keywords;
 	$self->_feedaggregator;
-	$self->_shorten;
+	$self->_shorten if !$self->dryrun;
 	$self->logger->debug('Startup HTTP Service...');
 	POE::Component::Client::HTTP->spawn(
 		Agent				=> $self->http_agent,
@@ -541,12 +530,13 @@ event add_feed => sub {
 
 event new_feed_entry => sub {
 	my ( $self, $feed, $entry ) = @_[ OBJECT, ARG0..$#_ ];
-	my $event = {
-		entry => $entry,
-	};
-	$self->logger->debug('New feed entry: '.$entry->link);
 	my $url = $entry->link;
 	$url =~ s/ //g;
+	my $event = {
+		entry => $entry,
+		url => $url,
+	};
+	$self->logger->debug('New feed entry: '.$url);
 	POE::Kernel->post(
 		$self->_http_alias,
 		'request',
@@ -568,11 +558,11 @@ event new_content => sub {
 		my $content = $response->decoded_content;
 		my $title = $event->{entry}->title;
 		if (!utf8::is_utf8($content)) {
-			$self->logger->debug('Recode content fetched from: '.$event->{entry}->link);
+			$self->logger->debug('Recode content fetched from: '.$event->{url});
 			$content = decode("Detect", $content);
 		}		
 		if (utf8::is_utf8($content)) {
-			$self->logger->debug('New content fetched from: '.$event->{entry}->link);
+			$self->logger->debug('New content fetched from: '.$event->{url});
 			$extractor->extract($content);
 			my @keywords = $self->_keywords->from($title, $extractor->as_text);
 			if ($self->debug) {
@@ -587,19 +577,17 @@ event new_content => sub {
 			} elsif ( $self->tweet_everything || ( $keywords[0] && $keywords[0]->container->params->{trigger} ) ) {
 				$event->{keywords} = \@keywords;
 				$self->logger->debug('Trigger keyword found in: '.$title);
-				my $url = $event->{entry}->link;
-				$url =~ s/ //g;
 				$self->_shorten->shorten({
-					url => $url,
+					url => $event->{url},
 					event => 'new_shortened',
 					_twitch_event => $event,
 				});
 			}
 		} else {
-			$self->logger->debug('Is no UTF8 from: '.$event->{entry}->link);
+			$self->logger->debug('Is no UTF8 from: '.$event->{url});
 		}
 	} else {
-		$self->logger->error('HTTP Code '.$response->code.' on: '.$event->{entry}->link);
+		$self->logger->error('HTTP Code '.$response->code.' on: '.$event->{url});
 	}
 };
 
@@ -608,8 +596,7 @@ event new_shortened => sub {
 	my $event = $returned->{_twitch_event};
 	my $title = $event->{entry}->title;
 	my $content = $event->{content};
-	my $url = $event->{entry}->link;
-	$url =~ s/ //g;
+	my $url = $event->{url};
 	my @keywords = @{$event->{keywords}};
 	if ($returned->{short}) {
 		$self->logger->debug('Received ShortURL for: '.$url);
@@ -635,6 +622,8 @@ sub twitter_update {
 			$self->logger->error('ERROR [twitter]: '.$@);
 			return 0;
 		}
+	} else {
+		$self->logger->debug('dryrun set, not really twittering it!');
 	}
 	return 1;
 }
