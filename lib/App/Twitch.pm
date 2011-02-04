@@ -51,12 +51,8 @@ has '+basedir' => (
 );
 
 has '+pidbase' => (
-	default => sub { getcwd },
-	default => sub {
-		my $self = shift;
-		$self->tmpdir;
-	},
-	documentation => 'Directory for the pid file (default: working directory)',
+	default => sub { shift->tmpdir },
+	documentation => 'Directory for the pid file (default: tmpdir)',
 );
 
 has '+pidfile' => (
@@ -222,6 +218,12 @@ has dryrun => (
 	documentation => 'Do not actually generate tweets, but do all other steps (default: 0)',
 );
 
+has dryrun_url => (
+	is => 'ro',
+	default => sub { 'http://xrl.us/DrYRuN' },
+	documentation => 'ShortenURL used for the dryrun debugging informations (default: http://xrl.us/DrYRuN)',
+);
+
 has tweet_everything => (
 	is => 'ro',
 	default => sub { 0 },
@@ -252,18 +254,20 @@ has blockercontainer => (
 	documentation => 'Give list of keyword files, which block tweeting that entry (comma seperated list of filenames)',
 );
 
-has bitly_username => (
+has shorten_type => (
 	isa => 'Str',
 	is => 'ro',
 	required => 1,
-	documentation => 'bit.ly API Username',
+	default => sub { 'Metamark' },
+	documentation => 'Which shorten service to be used, see WWW::Shorten (default: Metamark)',
 );
 
-has bitly_apikey => (
-	isa => 'Str',
+has shorten_params => (
+	isa => 'ArrayRef',
 	is => 'ro',
 	required => 1,
-	documentation => 'bit.ly API Key',
+	default => sub {[]},
+	documentation => 'Parameter used for the WWW::Shorten call, see WWW::Shorten (default: none)',
 );
 
 has tmpdir => (
@@ -459,11 +463,11 @@ has _shorten => (
 	lazy => 1,
 	default => sub {
 		my ( $self ) = @_;
-		$self->logger->debug('Startup Bit.ly Shorten Service...');
+		$self->logger->debug('Startup '.$self->shorten_type.' Shorten Service...');
 		return POE::Component::WWW::Shorten->spawn(
 			alias => $self->_shorten_alias,
-			type => 'Bitly',
-			params => [ $self->bitly_username, $self->bitly_apikey ],
+			type => $self->shorten_type,
+			params => $self->shorten_params,
 		);
 	},
 );
@@ -579,7 +583,7 @@ event new_content => sub {
 				$self->logger->debug('('.$event->{run_id}.') Trigger keyword found in: '.$title) if (!$self->tweet_everything);
 				if ($self->dryrun) {
 					$self->yield('new_shortened',{
-						short => 'http://bit.ly/DrYRuN',
+						short => $self->dryrun_url,
 						_twitch_event => $event,
 					});
 				} else {
