@@ -32,9 +32,6 @@ use Text::Tweet;
 use HTML::ExtractContent;
 use Carp qw( croak );
 
-# could be flexible, who cares.... ;)
-#use WWW::Shorten::Bitly;
-
 # could be ... ah forget it :-P
 use Net::Twitter;
 
