@@ -67,18 +67,6 @@ has '+use_logger_singleton' => (
 	traits => [ 'NoGetopt' ],
 );
 
-has '+pidfile' => (
-	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
-);
-
-has '+pidfile' => (
-	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
-);
-
-has '+pidfile' => (
-	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
-);
-
 has '+progname' => (
 	default => sub { 'twitch' },
 	documentation => 'Name for the application, like configfile name base and so on (default: twitch)',
@@ -487,6 +475,16 @@ has _shorten_alias => (
 	default => sub { 'shorten' },
 );
 
+has _entry_count => (
+	traits  => ['Counter'],
+	is      => 'ro',
+	isa     => 'Num',
+	default => 0,
+	handles => {
+		_entry_count_inc => 'inc',
+	},
+);
+
 sub START {
 	my ( $self, $session ) = @_[ OBJECT, SESSION ];
 	$self->logger->info('Starting up... '.__PACKAGE__);
@@ -530,13 +528,15 @@ event add_feed => sub {
 
 event new_feed_entry => sub {
 	my ( $self, $feed, $entry ) = @_[ OBJECT, ARG0..$#_ ];
+	$self->_entry_count_inc;
 	my $url = $entry->link;
 	$url =~ s/ //g;
 	my $event = {
 		entry => $entry,
 		url => $url,
+		run_id => $self->_entry_count,
 	};
-	$self->logger->debug('New feed entry: '.$url);
+	$self->logger->debug('('.$event->{run_id}.') New feed entry: '.$url);
 	POE::Kernel->post(
 		$self->_http_alias,
 		'request',
@@ -558,36 +558,45 @@ event new_content => sub {
 		my $content = $response->decoded_content;
 		my $title = $event->{entry}->title;
 		if (!utf8::is_utf8($content)) {
-			$self->logger->debug('Recode content fetched from: '.$event->{url});
+			$self->logger->debug('('.$event->{run_id}.') No utf8, trying recode content');
 			$content = decode("Detect", $content);
-		}		
+		}
 		if (utf8::is_utf8($content)) {
-			$self->logger->debug('New content fetched from: '.$event->{url});
 			$extractor->extract($content);
-			my @keywords = $self->_keywords->from($title, $extractor->as_text);
-			if ($self->debug) {
+			my $extracted_text = $extractor->as_text;
+			$self->logger->debug('('.$event->{run_id}.') Extracted content with '.length($extracted_text).' chars');
+			$event->{content} = $extracted_text;
+			my @keywords = $self->_keywords->from($title, $extracted_text);
+			if ($self->debug && @keywords) {
 				my @keywords_text;
-				for (@keywords) {
-					push @keywords_text, $_->found;
-				}
-				$self->logger->debug('Keywords found: |'.join("|",@keywords_text).'|');
+				push @keywords_text, $_->found for (@keywords);
+				$self->logger->debug('('.$event->{run_id}.') Keywords found: '.join(", ",@keywords_text));
 			}
 			if ( $keywords[0] && $keywords[0]->container->params->{blocker} ) {
-				$self->logger->debug('Blocker found, ignoring entry');
+				$self->logger->debug('('.$event->{run_id}.') Blocker found, ignoring entry');
 			} elsif ( $self->tweet_everything || ( $keywords[0] && $keywords[0]->container->params->{trigger} ) ) {
 				$event->{keywords} = \@keywords;
-				$self->logger->debug('Trigger keyword found in: '.$title);
-				$self->_shorten->shorten({
-					url => $event->{url},
-					event => 'new_shortened',
-					_twitch_event => $event,
-				});
+				$self->logger->debug('('.$event->{run_id}.') Trigger keyword found in: '.$title) if (!$self->tweet_everything);
+				if ($self->dryrun) {
+					$self->yield('new_shortened',{
+						short => 'http://bit.ly/DrYRuN',
+						_twitch_event => $event,
+					});
+				} else {
+					$self->_shorten->shorten({
+						url => $event->{url},
+						event => 'new_shortened',
+						_twitch_event => $event,
+					});
+				}
+			} else {
+				$self->logger->debug('('.$event->{run_id}.') Yeah... what i care... doing nothing with it');
 			}
 		} else {
-			$self->logger->debug('Is no UTF8 from: '.$event->{url});
+			$self->logger->debug('('.$event->{run_id}.') Is no UTF8');
 		}
 	} else {
-		$self->logger->error('HTTP Code '.$response->code.' on: '.$event->{url});
+		$self->logger->error('('.$event->{run_id}.') HTTP Code '.$response->code);
 	}
 };
 
@@ -599,31 +608,33 @@ event new_shortened => sub {
 	my $url = $event->{url};
 	my @keywords = @{$event->{keywords}};
 	if ($returned->{short}) {
-		$self->logger->debug('Received ShortURL for: '.$url);
+		$self->logger->debug('('.$event->{run_id}.') Received ShortURL');
 		my $short = $returned->{short};
 		my @keywords_text;
 		for (@keywords) {
 			push @keywords_text, $_->found;
 		}
-		$self->twitter_update($self->_tweet->make(\@keywords_text,$title,\$short));
+		$event->{tweet} = $self->_tweet->make(\@keywords_text,$title,\$short);
+		$self->twitter_update($event);
 	} else {
-		$self->logger->error('Failing generation of ShortURL for: '.$event->{entry}->link);
+		$self->logger->error('('.$event->{run_id}.') Failing generation of ShortURL');
 	}
 };
 
 sub twitter_update {
-	my ( $self, $text ) = @_;
-	$self->logger->info('Twitter update: '.$text);
+	my ( $self, $event ) = @_;
+	my $tweet = $event->{tweet};
+	$self->logger->info('('.$event->{run_id}.') Twitter update: '.$tweet);
 	if (!$self->dryrun) {
 		eval {
-			$self->_twitter->update({ status => $text });
+			$self->_twitter->update({ status => $tweet });
 		};
 		if ($@) {
-			$self->logger->error('ERROR [twitter]: '.$@);
+			$self->logger->error('('.$event->{run_id}.') ERROR [twitter]: '.$@);
 			return 0;
 		}
 	} else {
-		$self->logger->debug('dryrun set, not really twittering it!');
+		$self->logger->debug('('.$event->{run_id}.') dryrun set, not really twittering it!');
 	}
 	return 1;
 }
