@@ -486,9 +486,15 @@ has _entry_count => (
 	},
 );
 
+sub set_process_name {
+	my ( $self ) = @_;
+	$0 = 'App::Twitch '.$App::Twitch::VERSION.' using '.$self->configdir.'/'.$self->configfile;
+}
+
 sub START {
 	my ( $self, $session ) = @_[ OBJECT, SESSION ];
-	$self->logger->info('Starting up... '.__PACKAGE__);
+	$self->logger->info('Starting up App::Twitch... ');
+	$self->set_process_name;
 	$self->logger->debug('Assigning POE::Session');
 	$self->_session($session);
 	$self->_containers;
