@@ -1,6 +1,7 @@
 package App::Twitch;
 # ABSTRACT: Your personal Twitter b...... lalalala
 
+# Speed up complete POE Kernel
 sub POE::Kernel::USE_SIGCHLD () { 1 }
 use MooseX::POE;
 
@@ -31,21 +32,41 @@ use Text::Keywords::List;
 use Text::Tweet;
 use HTML::ExtractContent;
 use Carp qw( croak );
+use YAML qw( DumpFile );
 
 # could be ... ah forget it :-P
 use Net::Twitter;
 
 our $VERSION ||= '0.0development';
 
+before run => sub {
+	my $package = __PACKAGE__;
+	print <<"END_OF_INTRO";
+ _            _ _       _
+| |_ _      _(_) |_ ___| |___
+|  _\\ \\ /\\ / / | __/ __| '_  \\
+| |_ \\ V  V /| | || (__| | | | $package $VERSION
+ \\__| \\_/\\_/ |_|\\__\\___|_| |_| Usage with --help
+
+More information under http://search.cpan.org/perldoc/twitch
+
+Commands:
+
+  start   Start the twitch
+  stop    Stop the running twitch
+  restart Restart the twitch, or start it up if not running
+  status  Give current status of the twitch
+
+END_OF_INTRO
+};
+
 after start => sub {
 	my $self = shift;
 	return unless $self->is_daemon;
+	# Required, elsewhere your POE goes nuts
+	POE::Kernel->has_forked if !$self->foreground;
 	POE::Kernel->run;
 };
-
-has '+basedir' => (
-	documentation => 'Basepath for configfile or pidfile (default: current directory)',
-);
 
 has '+pidbase' => (
 	default => sub { shift->tmpdir },
@@ -56,17 +77,9 @@ has '+pidfile' => (
 	documentation => 'Filename for the pidfile (default: basedir/progname.pid)',
 );
 
-has '+use_logger_singleton' => (
-	traits => [ 'NoGetopt' ],
-);
-
 has '+progname' => (
 	default => sub { 'twitch' },
 	documentation => 'Name for the application, like configfile name base and so on (default: twitch)',
-);
-
-has '+logger' => (
-	traits => [ 'NoGetopt' ],
 );
 
 has '+foreground' => (
@@ -76,6 +89,13 @@ has '+foreground' => (
 has '+configfile' => (
 	default => sub { 'twitch.yml' },
 	documentation => 'Configuration file used for all those settings (default: twitch.yml)',
+);
+
+has 'configdir' => (
+	is => 'ro',
+	isa => 'Str',
+	default => sub { getcwd },
+	documentation => 'Directory for the keyword files and the feed file if given (default: current directory)',
 );
 
 has log_dispatch_conf => (
@@ -109,34 +129,6 @@ has log_dispatch_conf => (
 		}
 	},
 );
-
-sub run {
-	my ( $self ) = @_;
-	POE::Kernel->run;
-	if (!blessed $self) {
-		$self = $self->new_with_options;
-	}
-	my ( $command ) = @{$self->extra_argv};
-
-	if (!defined $command) {
-		if ($self->status) {
-			print "App::Twitch already running...\n";
-			exit 0;
-		} else {
-			$command = 'start';
-		}
-	}
-	
-	$self->start if $command eq 'start';
-	if ($command eq 'status') {
-		print "App::Twitch is ".( $self->status ? '' : 'not ')."running...\n";
-		exit $self->status ? 0 : 1;
-	}
-	$self->restart if $command eq 'restart';
-	$self->stop if $command eq 'stop';
-	
-	exit $self->exit_code;
-}
 
 has consumer_key => (
 	isa => 'Str',
@@ -177,7 +169,7 @@ has feeds => (
 			@lines = grep {
 				$_ = trim($_);
 				/^http:\/\//
-			} io($self->feeds_file)->slurp;
+			} io($self->configdir.'/'.$self->feeds_file)->slurp;
 		}
 		return \@lines;
 	},
@@ -205,24 +197,32 @@ has feed_delay => (
 
 has hashtags_at_end => (
 	is => 'ro',
+	isa => 'Bool',
+	required => 1,
 	default => sub { 0 },
 	documentation => 'Put all hashtag keywords after the URL (default: 0)',
 );
 
 has dryrun => (
 	is => 'ro',
+	isa => 'Bool',
+	required => 1,
 	default => sub { 0 },
 	documentation => 'Do not actually generate tweets, but do all other steps (default: 0)',
 );
 
 has dryrun_url => (
 	is => 'ro',
+	isa => 'Str',
+	required => 1,
 	default => sub { 'http://xrl.us/DrYRuN' },
 	documentation => 'ShortenURL used for the dryrun debugging informations (default: http://xrl.us/DrYRuN)',
 );
 
 has tweet_everything => (
 	is => 'ro',
+	isa => 'Bool',
+	required => 1,
 	default => sub { 0 },
 	documentation => 'Do not require a trigger keyword in the RSS for a tweet (default: 0)',
 );
@@ -272,15 +272,7 @@ has tmpdir => (
 	is => 'ro',
 	required => 1,
 	default => sub { getcwd },
-	documentation => 'Temp directory for the application (default: working directory)',
-);
-
-has configdir => (
-	isa => 'Str',
-	is => 'ro',
-	required => 1,
-	default => sub { getcwd },
-	documentation => 'Configuration directory for the application (default: working directory)',
+	documentation => 'Temp directory for the application (default: current directory)',
 );
 
 has debug => (
@@ -300,7 +292,7 @@ has no_logging => (
 has logfile => (
 	isa => 'Str',
 	is => 'ro',
-	default => sub { 'twitch.log' },
+	default => sub { shift->progname.'.log' },
 	documentation => 'Name of the logfile in the configuration directory (default: twitch.log)',
 );
 
@@ -316,15 +308,23 @@ has http_agent => (
 	isa => 'Str',
 	is => 'ro',
 	default => sub { __PACKAGE__.'/'.$VERSION },
-	documentation => 'HTTP-agent to be used for the HTTP request to fetch the content (default: App::Twitch/VERSION)',
+	documentation => 'HTTP-agent to be used for the HTTP request to fetch the content (default: '.__PACKAGE__.'/'.$VERSION.')',
 );
 
-# No idea why this doesn't work....
 has [ '+no_double_fork', '+ignore_zombies', '+dont_close_all_files', '+stop_timeout' ] => (
 	documentation => 'Please see MooseX::Daemonize documentation',
 );
 
 #--------------------------------------------------------
+
+has '+basedir' => (
+	default => sub { shift->tmpdir },
+	traits => [ 'NoGetopt' ],
+);
+
+has [ '+logger', '+use_logger_singleton', '+help_flag' ] => (
+	traits => [ 'NoGetopt' ],
+);
 
 sub _generate_containers {
 	my ( $self, $array, $params ) = @_;
@@ -477,7 +477,7 @@ has _shorten_alias => (
 );
 
 has _entry_count => (
-	traits  => ['Counter'],
+	traits  => [ 'Counter', 'NoGetopt' ],
 	is      => 'ro',
 	isa     => 'Num',
 	default => 0,
@@ -486,15 +486,80 @@ has _entry_count => (
 	},
 );
 
+sub running_config { shift->_running_config(@_) }
+
+has _running_config => (
+	is => 'rw',
+	isa => 'HashRef',
+	traits => [ 'NoGetopt' ],
+	lazy => 1,
+	default => sub {
+		my $self = shift;
+		my %attributes;
+		for ($self->meta->get_all_attributes) {
+			if (!$_->does('MooseX::Getopt::Meta::Attribute::Trait::NoGetopt')) {
+				my $value = $_->get_value($self);
+				$value = $value->file if (blessed $value and $value->isa('MooseX::Daemonize::Pid::File'));
+				$value = $value->stringify if (blessed $value and ( $value->isa('Path::Class::Dir') or $value->isa('Path::Class::File') ));
+				$attributes{$_->name} = $value;
+			}
+		}
+		$attributes{INC} = \@INC;
+		$attributes{PACKAGE} = __PACKAGE__;
+		$attributes{getcwd} = getcwd;
+		return \%attributes;
+	},
+);
+
 sub set_process_name {
 	my ( $self ) = @_;
-	$0 = 'App::Twitch '.$App::Twitch::VERSION.' using '.$self->configdir.'/'.$self->configfile;
+	$0 = __PACKAGE__.' '.$VERSION.' using '.( getcwd ).'/'.$self->configfile;
+}
+
+sub run {
+	my ( $self ) = @_;
+	POE::Kernel->run;
+	if (!blessed $self) {
+		$self = $self->new_with_options;
+	}
+	my ( $cmd ) = @{$self->extra_argv};
+	$cmd = 'start' if !$cmd;
+
+	print "Using configfile: ".( getcwd ).'/'.$self->configfile."\n";
+	print "Status: ".$self->status_message."\n" if ($cmd ne 'status' && $self->status);
+	print "\n";
+
+	die __PACKAGE__." already running...\n" if ($cmd eq 'start' && $self->status);
+	die __PACKAGE__." not running...\n" if ($cmd eq 'stop' && !$self->status);
+
+	if ($cmd eq 'start') {
+		print "Starting up ".__PACKAGE__."...\n";
+		$self->start;
+	};
+	if ($cmd eq 'status') {
+		print "Status: ".__PACKAGE__." is ".( $self->status ? '' : 'not ')."running...\n";
+		exit $self->status ? 0 : 1;
+	}
+	if ($cmd eq 'restart') {
+		if ($self->status) {
+			print __PACKAGE__." not running, starting up...\n";
+		} else {
+			print __PACKAGE__." restarting...\n";
+		}
+		$self->restart;
+	}
+	if ($cmd eq 'stop') {
+		print "Stopping ".__PACKAGE__."...\n";
+		$self->stop;
+	};
+	
+	exit $self->exit_code;
 }
 
 sub START {
 	my ( $self, $session ) = @_[ OBJECT, SESSION ];
-	$self->logger->info('Starting up App::Twitch... ');
 	$self->set_process_name;
+	$self->logger->info('Starting up App::Twitch '.$App::Twitch::VERSION.'... ');
 	$self->logger->debug('Assigning POE::Session');
 	$self->_session($session);
 	$self->_containers;
@@ -512,6 +577,9 @@ sub START {
 		FollowRedirects		=> 5,
 	);
 	$self->_max_feeds_count;
+	my $running_config_dumpfile = $self->tmpdir.'/'.$self->progname.'.running_config.yml';
+	DumpFile($running_config_dumpfile,$self->running_config);
+	chmod 0600, $running_config_dumpfile;
 	$self->yield('add_feed');
 }
 
