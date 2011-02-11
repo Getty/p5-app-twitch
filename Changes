@@ -2,6 +2,8 @@ Revision history for {{$dist->name}}
 
 {{$NEXT}}
 
+0.903     2011-02-11 02:25:52 Europe/Berlin
+
 0.902     2011-02-10 01:30:43 Europe/Berlin
 	- Many tuning on layout and POE performance
 
