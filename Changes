@@ -1,6 +1,8 @@
 Revision history for {{$dist->name}}
 
 {{$NEXT}}
+	- Added proper FeedAggregator
+	- Added logger handling for the subcomponents
 
 0.903     2011-02-11 02:25:52 Europe/Berlin
 

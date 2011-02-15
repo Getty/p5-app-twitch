@@ -107,7 +107,7 @@ has log_dispatch_conf => (
 	default => sub {
 		my $self = shift;
 		return {} if $self->no_logging;
-		my $format = '[%p] %m';
+		my $format = '[%d] [%p] %m';
 		my $minlevel = $self->debug ? 'debug' : 'info';
 		if ($self->foreground || !$self->logfile) {
 			return {
@@ -123,7 +123,7 @@ has log_dispatch_conf => (
 				min_level	=> $minlevel,
 				filename	=> $self->configdir.'/'.$self->logfile,
 				mode		=> '>>',
-				format		=> '[%d] '.$format,
+				format		=> $format,
 				newline		=> 1,
 			}
 		}
@@ -331,10 +331,10 @@ sub _generate_containers {
 	my @containers;
 	$params = {} if !$params;
 	for (@{$array}) {
-		$self->logger->debug('Preparing Keywords::Container for blockercontainer');
+		$self->logger->debug($self->logger_prefix.'Preparing Keywords::Container for blockercontainer');
 		my @lists;
 		for (split(',',$_)) {
-			$self->logger->debug('Preparing Keywords::List '.$_);
+			$self->logger->debug($self->logger_prefix.'Preparing Keywords::List '.$_);
 			my @lines = grep { $_ = trim($_); } io($self->configdir.'/'.$_)->slurp;
 			push @lists, Text::Keywords::List->new(
 				keywords => \@lines,
@@ -355,7 +355,7 @@ has _containers => (
 	lazy    => 1,
 	default => sub {
 		my ( $self ) = @_;
-		$self->logger->debug('Generating all Keywords::Container');
+		$self->logger->debug($self->logger_prefix.'Generating all Keywords::Container');
 		my @containers;
 		push @containers, $self->_generate_containers($self->blockercontainer, { blocker => 1 });
 		push @containers, $self->_generate_containers($self->triggercontainer, { trigger => 1 });
@@ -378,9 +378,11 @@ has _feedaggregator => (
 	lazy => 1,
 	default => sub {
 		my $self = shift;
-		$self->logger->debug('Starting POE::Component::FeedAggregator');
+		$self->logger->debug($self->logger_prefix.'Starting POE::Component::FeedAggregator');
 		POE::Component::FeedAggregator->new(
-			tmpdir   => $self->tmpdir,
+			tmpdir     => $self->tmpdir,
+			logger     => $self->logger,
+			http_agent => $self->http_agent,
 		);
 	},
 );
@@ -392,7 +394,7 @@ has _twitter => (
 	lazy => 1,
 	default => sub {
 		my $self = shift;
-		$self->logger->debug('Starting Net::Twitter');
+		$self->logger->debug($self->logger_prefix.'Starting Net::Twitter');
 		Net::Twitter->new(
 			traits   => [qw/ API::REST API::Search OAuth /],
 			consumer_key		=> $self->consumer_key,
@@ -444,6 +446,8 @@ has _keepalive => (
 	traits => [ 'NoGetopt' ],
 	lazy => 1,
 	default => sub {
+		my ( $self ) = @_;
+		$self->logger->debug($self->logger_prefix.'Startup POE::Component::Client::Keepalive');
 		POE::Component::Client::Keepalive->new(
 			keep_alive    => 20, # seconds to keep connections alive
 			max_open      => 100, # max concurrent connections - total
@@ -460,7 +464,7 @@ has _shorten => (
 	lazy => 1,
 	default => sub {
 		my ( $self ) = @_;
-		$self->logger->debug('Startup '.$self->shorten_type.' Shorten Service...');
+		$self->logger->debug($self->logger_prefix.'Startup '.$self->shorten_type.' Shorten Service...');
 		return POE::Component::WWW::Shorten->spawn(
 			alias => $self->_shorten_alias,
 			type => $self->shorten_type,
@@ -507,6 +511,8 @@ has _running_config => (
 		$attributes{INC} = \@INC;
 		$attributes{PACKAGE} = __PACKAGE__;
 		$attributes{getcwd} = getcwd;
+		$attributes{getpid} = getpid;
+		$attributes{started_time} = time;
 		return \%attributes;
 	},
 );
@@ -559,8 +565,8 @@ sub run {
 sub START {
 	my ( $self, $session ) = @_[ OBJECT, SESSION ];
 	$self->set_process_name;
-	$self->logger->info('Starting up App::Twitch '.$App::Twitch::VERSION.'... ');
-	$self->logger->debug('Assigning POE::Session');
+	$self->logger->info($self->logger_prefix.'Starting up App::Twitch '.$App::Twitch::VERSION.'... ');
+	$self->logger->debug($self->logger_prefix.'Assigning POE::Session');
 	$self->_session($session);
 	$self->_containers;
 	$self->_twitter if !$self->dryrun;
@@ -568,7 +574,7 @@ sub START {
 	$self->_keywords;
 	$self->_feedaggregator;
 	$self->_shorten if !$self->dryrun;
-	$self->logger->debug('Startup HTTP Service...');
+	$self->logger->info($self->logger_prefix.'Startup HTTP Service...');
 	POE::Component::Client::HTTP->spawn(
 		Agent				=> $self->http_agent,
 		Alias				=> $self->_http_alias,
@@ -577,7 +583,8 @@ sub START {
 		FollowRedirects		=> 5,
 	);
 	$self->_max_feeds_count;
-	my $running_config_dumpfile = $self->tmpdir.'/'.$self->progname.'.running_config.yml';
+	my $running_config_dumpfile = $self->tmpdir.'/'.$self->configfile;
+	$running_config_dumpfile =~ s/\.yml/\.running_config\.yml/;
 	DumpFile($running_config_dumpfile,$self->running_config);
 	chmod 0600, $running_config_dumpfile;
 	$self->yield('add_feed');
@@ -586,7 +593,7 @@ sub START {
 event add_feed => sub {
 	my ( $self, $kernel ) = @_[ OBJECT, KERNEL ];
 	my $feed_url = $self->feeds_shift;
-	$self->logger->info('Adding feed: '.$feed_url);
+	$self->logger->info($self->logger_prefix.'Adding feed: '.$feed_url);
 	eval {
 		my $feed = {
 			url				=> $feed_url,
@@ -596,7 +603,7 @@ event add_feed => sub {
 		};
 		$self->_feedaggregator->add_feed($feed);
 	};
-	$self->logger->error('ERROR ['.$feed_url.']: '.$@) if $@;
+	$self->logger->error($self->logger_prefix.'ERROR ['.$feed_url.']: '.$@) if $@;
 	my $delay = floor( $self->feed_delay / $self->_max_feeds_count );
 	$kernel->delay('add_feed',$delay) if $self->feeds_count;
 };
@@ -611,7 +618,7 @@ event new_feed_entry => sub {
 		url => $url,
 		run_id => $self->_entry_count,
 	};
-	$self->logger->debug('('.$event->{run_id}.') New feed entry: '.$url);
+	$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} New feed entry: '.$url);
 	POE::Kernel->post(
 		$self->_http_alias,
 		'request',
@@ -634,25 +641,25 @@ event new_content => sub {
 			my $content = $response->decoded_content;
 			my $title = $event->{entry}->title;
 			if (!utf8::is_utf8($content)) {
-				$self->logger->debug('('.$event->{run_id}.') No utf8, trying recode content');
+				$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} No utf8, trying recode content');
 				$content = decode("Detect", $content);
 			}
 			if (utf8::is_utf8($content)) {
 				$extractor->extract($content);
 				my $extracted_text = $extractor->as_text;
-				$self->logger->debug('('.$event->{run_id}.') Extracted content with '.length($extracted_text).' chars');
+				$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Extracted content with '.length($extracted_text).' chars');
 				$event->{content} = $extracted_text;
 				my @keywords = $self->_keywords->from($title, $extracted_text);
 				if ($self->debug && @keywords) {
 					my @keywords_text;
 					push @keywords_text, $_->found for (@keywords);
-					$self->logger->debug('('.$event->{run_id}.') Keywords found: '.join(", ",@keywords_text));
+					$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Keywords found: '.join(", ",@keywords_text));
 				}
 				if ( $keywords[0] && $keywords[0]->container->params->{blocker} ) {
-					$self->logger->debug('('.$event->{run_id}.') Blocker found, ignoring entry');
+					$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Blocker found, ignoring entry');
 				} elsif ( $self->tweet_everything || ( $keywords[0] && $keywords[0]->container->params->{trigger} ) ) {
 					$event->{keywords} = \@keywords;
-					$self->logger->debug('('.$event->{run_id}.') Trigger keyword found in: '.$title) if (!$self->tweet_everything);
+					$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Trigger keyword found in: '.$title) if (!$self->tweet_everything);
 					if ($self->dryrun) {
 						$self->yield('new_shortened',{
 							short => $self->dryrun_url,
@@ -666,16 +673,16 @@ event new_content => sub {
 						});
 					}
 				} else {
-					$self->logger->debug('('.$event->{run_id}.') Yeah... what i care... doing nothing with it');
+					$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Yeah... what i care... doing nothing with it');
 				}
 			} else {
-				$self->logger->debug('('.$event->{run_id}.') Is no UTF8');
+				$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Is no UTF8');
 			}
 		} else {
-			$self->logger->error('('.$event->{run_id}.') Wrong HTTP Code '.$response->code);
+			$self->logger->error($self->logger_prefix.'{'.$event->{run_id}.'} Wrong HTTP Code '.$response->code);
 		}
 	};
-	$self->logger->error('('.$event->{run_id}.') ERROR [content handling]: '.$@) if $@;
+	$self->logger->error($self->logger_prefix.'{'.$event->{run_id}.'} ERROR [content handling]: '.$@) if $@;
 };
 
 event new_shortened => sub {
@@ -687,7 +694,7 @@ event new_shortened => sub {
 		my $url = $event->{url};
 		my @keywords = @{$event->{keywords}};
 		if ($returned->{short}) {
-			$self->logger->debug('('.$event->{run_id}.') Received ShortURL');
+			$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} Received ShortURL');
 			my $short = $returned->{short};
 			my @keywords_text;
 			for (@keywords) {
@@ -696,16 +703,16 @@ event new_shortened => sub {
 			$event->{tweet} = $self->_tweet->make(\@keywords_text,$title,\$short);
 			$self->twitter_update($event);
 		} else {
-			$self->logger->error('('.$event->{run_id}.') Failing generation of ShortURL');
+			$self->logger->error($self->logger_prefix.'{'.$event->{run_id}.'} Failing generation of ShortURL');
 		}
 	};
-	$self->logger->error('('.$event->{run_id}.') ERROR [finalize and tweeting]: '.$@) if $@;
+	$self->logger->error($self->logger_prefix.'{'.$event->{run_id}.'} ERROR [finalize and tweeting]: '.$@) if $@;
 };
 
 sub twitter_update {
 	my ( $self, $event ) = @_;
 	my $tweet = $event->{tweet};
-	$self->logger->info('('.$event->{run_id}.') Twitter update: '.$tweet);
+	$self->logger->info($self->logger_prefix.'{'.$event->{run_id}.'} Twitter update: '.$tweet);
 	if (!$self->dryrun) {
 		eval {
 			$self->_twitter->update({ status => $tweet });
@@ -715,9 +722,14 @@ sub twitter_update {
 			return 0;
 		}
 	} else {
-		$self->logger->debug('('.$event->{run_id}.') dryrun set, not really twittering it!');
+		$self->logger->debug($self->logger_prefix.'{'.$event->{run_id}.'} dryrun set, not really twittering it!');
 	}
 	return 1;
+}
+
+sub logger_prefix {
+	my $self = shift;
+	__PACKAGE__.' ('.$self->get_session_id.') ';
 }
 
 __PACKAGE__->meta->make_immutable;
