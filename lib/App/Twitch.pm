@@ -544,7 +544,7 @@ sub run {
 	};
 	if ($cmd eq 'status') {
 		print "Status: ".__PACKAGE__." is ".( $self->status ? '' : 'not ')."running...\n";
-		exit $self->status ? 0 : 1;
+		exit($self->status ? 0 : 1);
 	}
 	if ($cmd eq 'restart') {
 		if ($self->status) {
